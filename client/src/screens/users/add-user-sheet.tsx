@@ -92,7 +92,7 @@ export const AddUserDrawer = () => {
 
   return (
     <Drawer direction="right" open={isOpen} onOpenChange={onClose}>
-      <DrawerContent className="right-2 top-2 bottom-2 fixed flex data-[vaul-drawer-direction=right]:sm:max-w-lg bg-gradient-to-b from-white to-gray-50">
+      <DrawerContent className="right-2 top-2 bottom-2 fixed flex data-[vaul-drawer-direction=right]:sm:max-w-lg bg-gradient-to-b  from-white to-gray-50">
         <DrawerHeader className="border-b mt-2 pb-4">
           <DrawerTitle className="font-extrabold text-xl">
             Create New User

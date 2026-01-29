@@ -6,10 +6,6 @@ import { VitePWA } from "vite-plugin-pwa";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  server: {
-    port: 5173,
-    host: "react.dev.lo",
-  },
   plugins: [
     tsConfigPaths(),
     tanstackStart({
