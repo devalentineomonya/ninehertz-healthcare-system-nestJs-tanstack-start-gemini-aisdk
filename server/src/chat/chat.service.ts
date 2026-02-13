@@ -1,11 +1,10 @@
-import { createAzure } from '@ai-sdk/azure';
-import { streamText, tool } from 'ai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { streamText, tool } from 'ai';
 import { Cache } from 'cache-manager';
 import { Response } from 'express';
-import { z } from 'zod';
 import { AppointmentService } from 'src/appointment/appointment.service';
 import {
   AppointmentMode,
@@ -16,10 +15,11 @@ import { DaysOfWeek } from 'src/doctor/dto/availability-slot.dto';
 import { DoctorFilterDto } from 'src/doctor/dto/doctor-filter.dto';
 import { AppointmentStatus } from 'src/enums/appointment.enum';
 import { PatientService } from 'src/patient/patient.service';
-import { PrescriptionService } from 'src/prescription/prescription.service';
-import { CreateChatDto, MessageDto } from './dto/create-chat.dto';
 import { PharmacistService } from 'src/pharmacist/pharmacist.service';
+import { PrescriptionService } from 'src/prescription/prescription.service';
 import { UserRole } from 'src/user/entities/user.entity';
+import { z } from 'zod';
+import { CreateChatDto, MessageDto } from './dto/create-chat.dto';
 
 interface PaginationDto {
   page: number;
@@ -36,8 +36,8 @@ interface UserContext {
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
-  private readonly azure: ReturnType<typeof createAzure>;
-  private readonly model: string = 'o4-mini';
+  private readonly google: ReturnType<typeof createGoogleGenerativeAI>;
+  private readonly model: string = 'gemini-2.0-flash';
 
   // Rate limiting constants
   private readonly RATE_LIMIT_COUNT = 10;
@@ -56,32 +56,19 @@ export class ChatService {
     private readonly prescriptionService: PrescriptionService,
     private readonly pharmacistService: PharmacistService,
   ) {
-    const apiKey = this.configService.getOrThrow<string>(
-      'AZURE_OPENAI_API_KEY',
-    );
-    // const resourceName = this.configService.getOrThrow<string>(
-    //   'AZURE_OPENAI_RESOURCE_NAME',
-    // );
-    // const apiVersion = this.configService.get<string>(
-    //   'AZURE_OPENAI_API_VERSION',
-    //   '2025-01-01-preview',
-    // );
+    const apiKey = this.configService.getOrThrow<string>('GEMINI_API_KEY');
 
-    this.azure = createAzure({
+    this.google = createGoogleGenerativeAI({
       apiKey,
-      // resourceName,
-      // apiVersion,
-      baseURL:
-        'https://azuretalk.openai.azure.com/openai/deployments/o4-mini/chat/completions?api-version=2025-01-01-preview',
     });
   }
 
   async testModel() {
     try {
-      this.logger.debug('Testing Azure OpenAI connection...');
+      this.logger.debug('Testing Google Gemini connection...');
 
       const testPayload = {
-        model: this.azure(this.model),
+        model: this.google(this.model),
         temperature: 0.9,
         maxTokens: 15,
         messages: [
@@ -104,7 +91,7 @@ export class ChatService {
       let response = '';
       let chunkCount = 0;
 
-      this.logger.debug('Sending request to Azure...');
+      this.logger.debug('Sending request to Gemini...');
       const startTime = Date.now();
 
       try {
@@ -140,20 +127,31 @@ export class ChatService {
       }
 
       return { response, chunkCount, success: true };
-    } catch (error) {
-      // 4. Specific Azure error handling
-      if (error.name === 'AbortError') {
-        this.logger.error('Azure request timed out');
-      } else if (error.response?.data?.error) {
-        this.logger.error('Azure API Error:', error.response.data.error);
-      } else {
+    } catch (error: unknown) {
+      // 4. Specific Gemini error handling
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        this.logger.error('Gemini request timed out');
+      } else if (
+        error instanceof Error &&
+        'response' in error &&
+        (error as Record<string, any>).response?.data?.error
+      ) {
+        this.logger.error(
+          'Gemini API Error:',
+          (error as Record<string, any>).response.data.error,
+        );
+      } else if (error instanceof Error) {
         this.logger.error('Test Failed', {
           message: error.message,
           stack: error.stack,
         });
+      } else {
+        this.logger.error('Test Failed', { message: String(error) });
       }
 
-      throw new Error(`Azure test failed: ${error.message}`);
+      const message =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Gemini test failed: ${message}`);
     }
   }
 
@@ -418,7 +416,7 @@ export class ChatService {
       ];
 
       this.logger.log(
-        'Calling Azure OpenAI API with messages:',
+        'Calling Google Gemini API with messages:',
         aiMessages.length,
       );
 
@@ -429,10 +427,10 @@ export class ChatService {
       );
 
       const result = streamText({
-        model: this.azure(this.model),
+        model: this.google(this.model),
         messages: aiMessages,
         tools,
-        maxTokens: 1024,
+        maxOutputTokens: 1024,
         temperature: 0.7,
       });
 
@@ -444,13 +442,13 @@ export class ChatService {
 
       try {
         // Handle the response promise separately for debugging
-        result.response
+        Promise.resolve(result.response)
           .then((response) => {
             this.logger.log(
               `AI Response received - Messages: ${JSON.stringify(response.messages)}, Headers: ${JSON.stringify(response.headers)}`,
             );
           })
-          .catch((error) => {
+          .catch((error: unknown) => {
             this.logger.error(`AI Response promise error:`, error);
           });
 
@@ -530,9 +528,9 @@ export class ChatService {
         // Try a simple test call to diagnose the issue
         try {
           const testResult = streamText({
-            model: this.azure(this.model),
+            model: this.google(this.model),
             messages: [{ role: 'user', content: 'Say hello' }],
-            maxTokens: 50,
+            maxOutputTokens: 50,
           });
 
           const testText = await testResult.text;

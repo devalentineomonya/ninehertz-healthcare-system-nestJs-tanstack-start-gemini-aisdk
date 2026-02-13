@@ -1,7 +1,4 @@
-#!/usr/bin/env bash
-
-# count_sloc.sh — Count source lines of code excluding irrelevant folders
-
+#!/usr/bin/bash
 # Root directory (defaults to current directory if not provided)
 TARGET_DIR=${1:-.}
 
