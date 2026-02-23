@@ -149,8 +149,7 @@ export class ChatService {
         this.logger.error('Test Failed', { message: String(error) });
       }
 
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Gemini test failed: ${message}`);
     }
   }

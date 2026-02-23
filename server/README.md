@@ -53,33 +53,40 @@ server/
 ## Getting Started
 
 ### 1. Clone the repository:
+
 ```bash
 git clone https://github.com/devalentineomonya/NineHertz-NestJs-Tanstack-Start.git
 cd NineHertz-NestJs-Tanstack-Start/server
 ```
 
 ### 2. Install dependencies:
+
 ```bash
 pnpm install
 ```
 
 ### 3. Configure environment:
+
 ```bash
 cp .env.example .env
 ```
+
 Edit the `.env` file with your configuration values.
 
 ### 4. Start Docker containers:
+
 ```bash
 docker-compose up -d
 ```
 
 ### 5. Run database migrations:
+
 ```bash
 pnpm typeorm migration:run
 ```
 
 ### 6. Start the server:
+
 ```bash
 pnpm start:dev
 ```
@@ -87,22 +94,26 @@ pnpm start:dev
 ## Development Workflow
 
 **Start all services:**
+
 ```bash
 docker-compose up -d
 pnpm start:dev
 ```
 
 **Run database migrations:**
+
 ```bash
 pnpm typeorm migration:run
 ```
 
 **Generate new migration:**
+
 ```bash
 pnpm typeorm migration:generate src/migrations/<MigrationName>
 ```
 
 **Access database container:**
+
 ```bash
 docker exec -it ninehertz-db psql -U postgres
 ```
@@ -110,6 +121,7 @@ docker exec -it ninehertz-db psql -U postgres
 ## API Documentation
 
 After starting the server, access the Swagger UI at:
+
 ```
 http://localhost:3000/api
 ```
@@ -117,46 +129,89 @@ http://localhost:3000/api
 ## Docker Management
 
 **Start containers:**
+
 ```bash
 docker-compose up -d
 ```
 
 **Stop containers:**
+
 ```bash
 docker-compose down
 ```
 
 **View logs:**
+
 ```bash
 docker-compose logs -f
 ```
 
 **Rebuild containers:**
+
 ```bash
 docker-compose up -d --build
 ```
 
 ## Environment Variables
 
-| Variable         | Description                | Default Value     |
-|------------------|----------------------------|------------------|
-| PORT            | Server port               | 3000            |
-| DB_HOST         | Database host             | localhost       |
-| DB_PORT         | Database port             | 5432            |
-| DB_USERNAME     | Database user             | postgres        |
-| DB_PASSWORD     | Database password         | postgres        |
-| DB_NAME         | Database name             | ninehertz       |
-| JWT_SECRET      | JWT signing secret        | -               |
-| JWT_EXPIRES_IN  | Token expiration time     | 1h              |
+| Variable          | Description                  | Default Value                           |
+| ----------------- | ---------------------------- | --------------------------------------- |
+| PORT              | Server port                  | 3000                                    |
+| DB_HOST           | Database host                | localhost                               |
+| DB_PORT           | Database port                | 5432                                    |
+| DB_USERNAME       | Database user                | postgres                                |
+| DB_PASSWORD       | Database password            | postgres                                |
+| DB_NAME           | Database name                | ninehertz                               |
+| JWT_SECRET        | JWT signing secret           | -                                       |
+| JWT_EXPIRES_IN    | Token expiration time        | 1h                                      |
+| **BREVO_API_KEY** | **Brevo API key for emails** | **-**                                   |
+| **MAIL_USER**     | **Sender email address**     | **your-email@example.com**              |
+| MAIL_SENDER_NAME  | Sender display name          | NineHertz Medic - Your Health Our Pride |
+
+### Email Configuration (Brevo)
+
+This application uses **Brevo** (formerly Sendinblue) for transactional email delivery. To configure email functionality:
+
+1. **Create a Brevo account:**
+   - Sign up at [https://www.brevo.com](https://www.brevo.com)
+   - Navigate to SMTP & API → API Keys
+   - Create a new API key
+
+2. **Configure environment variables:**
+
+   ```bash
+   BREVO_API_KEY=your_brevo_api_key_here
+   MAIL_USER=your-verified-sender-email@example.com
+   MAIL_SENDER_NAME="NineHertz Medic - Your Health Our Pride"
+   ```
+
+3. **Verify your sender domain/email:**
+   - In Brevo dashboard, go to Senders & IPs → Senders
+   - Add and verify your sender email address
+   - This is required to send emails
+
+4. **Testing email functionality:**
+
+   ```bash
+   # Run unit tests
+   pnpm test -- mail.service.spec.ts
+
+   # Run E2E tests (requires .env.test configuration)
+   pnpm test:e2e -- mail.e2e-spec.ts
+   ```
+
+**Note:** The previous `nodemailer` implementation has been replaced with Brevo SDK for improved deliverability, better error handling, and enterprise-grade email infrastructure.
 
 ## Production Deployment
 
 ### Build Docker image:
+
 ```bash
 docker build -t ninehertz-server .
 ```
 
 ### Run container:
+
 ```bash
 docker run -d --name ninehertz-app \
   -p 3000:3000 \
@@ -165,6 +220,7 @@ docker run -d --name ninehertz-app \
 ```
 
 ### Docker Compose (production):
+
 ```bash
 docker-compose -f docker-compose.prod.yml up -d
 ```

@@ -1,52 +1,55 @@
-import { Injectable } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
+import { BrevoClient, BrevoError } from '@getbrevo/brevo';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  otpEmail,
-  otpEmailProps,
-  ResetPasswordEmail,
-} from './templates/mail.templates';
 import {
   appointmentCancelledEmail,
   appointmentCreatedEmail,
   appointmentReminderEmail,
   prescriptionEmail,
 } from './templates/appointment.templates';
+import {
+  otpEmail,
+  otpEmailProps,
+  ResetPasswordEmail,
+} from './templates/mail.templates';
 import { orderEmail } from './templates/order-email';
 
 @Injectable()
 export class MailService {
-  private transporter: nodemailer.Transporter;
+  private readonly brevo: BrevoClient;
+  private readonly logger = new Logger(MailService.name);
+  private readonly senderEmail: string;
+  private readonly senderName: string;
 
   constructor(private configService: ConfigService) {
-    this.transporter = nodemailer.createTransport({
-      host: this.configService.getOrThrow('MAIL_HOST'),
-      port: this.configService.getOrThrow<number>('MAIL_PORT'),
-      secure: this.configService.getOrThrow<boolean>('MAIL_SECURE'),
-      requireTLS: true,
+    const apiKey = this.configService.getOrThrow<string>('BREVO_API_KEY');
+    this.senderEmail = this.configService.getOrThrow<string>('MAIL_USER');
+    this.senderName =
+      this.configService.get<string>('MAIL_SENDER_NAME') ||
+      'NineHertz Medic - Your Health Our Pride';
 
-      auth: {
-        user: this.configService.getOrThrow('MAIL_USER'),
-        pass: this.configService.getOrThrow('MAIL_PASS'),
-      },
+    this.brevo = new BrevoClient({
+      apiKey,
+      timeoutInSeconds: 30,
+      maxRetries: 2,
     });
   }
 
   async sendOTPCode(
     to: string,
     props: otpEmailProps,
-  ): Promise<nodemailer.SentMessageInfo> {
+  ): Promise<{ messageId?: string }> {
     const html = otpEmail({ ...props });
-    console.log(html);
+    this.logger.debug(`Sending OTP email to ${to}`);
     return this.sendEmail(to, 'Your MFA Code', html);
   }
 
   async sendResetPasswordEmail(
     to: string,
     resetLink: string,
-  ): Promise<nodemailer.SentMessageInfo> {
+  ): Promise<{ messageId?: string }> {
     const html = ResetPasswordEmail({ resetLink });
-    console.log(html);
+    this.logger.debug(`Sending reset password email to ${to}`);
     return this.sendEmail(to, 'Reset Your Password', html);
   }
 
@@ -54,14 +57,36 @@ export class MailService {
     to: string,
     subject: string,
     html: string,
-  ): Promise<nodemailer.SentMessageInfo> {
-    return this.transporter.sendMail({
-      from: `"NineHertz Medic - Your Health Our Pride" <${this.configService.get('MAIL_USER')}>`,
-      to,
-      subject,
-      html,
-    });
+  ): Promise<{ messageId?: string }> {
+    try {
+      const response = await this.brevo.transactionalEmails.sendTransacEmail({
+        to: [{ email: to }],
+        sender: {
+          email: this.senderEmail,
+          name: this.senderName,
+        },
+        subject,
+        htmlContent: html,
+      });
+
+      this.logger.log(
+        `Email sent successfully to ${to}. Message ID: ${response.messageId}`,
+      );
+      return { messageId: response.messageId };
+    } catch (error) {
+      if (error instanceof BrevoError) {
+        this.logger.error(
+          `Failed to send email to ${to}: [${error.statusCode}] ${error.message}`,
+        );
+        throw new Error(`Email sending failed: ${error.message}`);
+      }
+      this.logger.error(`Failed to send email to ${to}:`, error);
+      throw new Error(
+        `Email sending failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
   }
+
   async sendAppointmentCreated(
     to: string,
     props: {
@@ -70,7 +95,7 @@ export class MailService {
       appointmentTime: string;
       meetingLink?: string;
     },
-  ): Promise<nodemailer.SentMessageInfo> {
+  ): Promise<{ messageId?: string }> {
     const html = appointmentCreatedEmail(props);
     return this.sendEmail(to, 'Your Appointment is Confirmed', html);
   }
@@ -83,7 +108,7 @@ export class MailService {
       appointmentTime: string;
       meetingLink?: string;
     },
-  ): Promise<nodemailer.SentMessageInfo> {
+  ): Promise<{ messageId?: string }> {
     const html = appointmentReminderEmail(props);
     return this.sendEmail(to, 'Appointment Reminder', html);
   }
@@ -112,6 +137,7 @@ export class MailService {
       html,
     );
   }
+
   async sendPrescriptionEmail(
     email: string,
     data: {
@@ -143,6 +169,7 @@ export class MailService {
       html,
     );
   }
+
   async sendOrderEmail(email: string, data: Parameters<typeof orderEmail>[0]) {
     const html = orderEmail(data);
 
