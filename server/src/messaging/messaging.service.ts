@@ -1,18 +1,16 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { createClient } from '@supabase/supabase-js';
-import { User } from '../user/entities/user.entity';
-import { Appointment } from '../appointment/entities/appointment.entity';
 import { ConfigService } from '@nestjs/config';
-import { SupabaseClient } from '@supabase/supabase-js';
+import { InjectRepository } from '@nestjs/typeorm';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Repository } from 'typeorm';
+import { Appointment } from '../appointment/entities/appointment.entity';
+import { User } from '../user/entities/user.entity';
 interface Database {
   public: {
     Tables: {
@@ -38,6 +36,17 @@ interface Database {
           last_message_at?: string;
           unread_count?: number;
         };
+        Update: {
+          appointment_id?: string;
+          participants?: string[];
+          type?: string;
+          created_at?: string;
+          updated_at?: string;
+          last_message?: string;
+          last_message_at?: string;
+          unread_count?: number;
+        };
+        Relationships: [];
       };
       chat_participants: {
         Row: {
@@ -50,6 +59,12 @@ interface Database {
           user_id: string;
           joined_at: string;
         };
+        Update: {
+          chat_id?: string;
+          user_id?: string;
+          joined_at?: string;
+        };
+        Relationships: [];
       };
       messages: {
         Row: {
@@ -67,14 +82,26 @@ interface Database {
           message_type: string;
           read_by: string[];
         };
+        Update: {
+          chat_id?: string;
+          sender_id?: string;
+          content?: string;
+          message_type?: string;
+          read_by?: string[];
+        };
+        Relationships: [];
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 }
 
 @Injectable()
 export class MessagingService {
-  private supabase: SupabaseClient<Database>;
+  private supabase: SupabaseClient<Database, 'public'>;
 
   constructor(
     @InjectRepository(User)
@@ -83,7 +110,7 @@ export class MessagingService {
     private appointmentRepository: Repository<Appointment>,
     private readonly configService: ConfigService,
   ) {
-    this.supabase = createClient(
+    this.supabase = createClient<Database, 'public'>(
       this.configService.getOrThrow<string>('SUPABASE_URL'),
       this.configService.getOrThrow<string>('SUPABASE_SERVICE_KEY'),
     );
@@ -115,7 +142,7 @@ export class MessagingService {
       .single();
 
     if (existingChat) {
-      return { chatId: existingChat.id as string };
+      return { chatId: existingChat.id };
     }
 
     // Create new chat in Supabase
@@ -236,13 +263,20 @@ export class MessagingService {
 
     // Update read_by array for unread messages
     const updates = unreadMessages.map((msg) => ({
-      id: msg.id as string,
+      id: msg.id,
       read_by: [...msg.read_by, userId],
     }));
 
-    const { error: updateError } = await this.supabase
-      .from('messages')
-      .upsert(updates);
+    const updateResults = await Promise.all(
+      updates.map((update) =>
+        this.supabase
+          .from('messages')
+          .update({ read_by: update.read_by })
+          .eq('id', update.id),
+      ),
+    );
+
+    const updateError = updateResults.find((result) => result.error)?.error;
 
     if (updateError) {
       throw new BadRequestException('Failed to mark messages as read');

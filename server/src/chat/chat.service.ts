@@ -34,7 +34,6 @@ interface UserContext {
   doctorId?: string;
 }
 
-
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -61,7 +60,7 @@ export class ChatService {
     const apiKey = String(this.configService.getOrThrow('GEMINI_API_KEY'));
     this.google = createGoogleGenerativeAI({
       apiKey,
-    }) as ReturnType<typeof createGoogleGenerativeAI>;
+    });
   }
 
   async testModel() {
@@ -612,7 +611,9 @@ export class ChatService {
       userId: z.string().describe('ID of the user'),
       role: z.string().describe('User role (patient, doctor, pharmacist)'),
     });
-    type GetMyPrescriptionsInput = z.infer<typeof getMyPrescriptionsInputSchema>;
+    type GetMyPrescriptionsInput = z.infer<
+      typeof getMyPrescriptionsInputSchema
+    >;
 
     const getPrescriptionDetailsInputSchema = z.object({
       prescriptionId: z.string().describe('ID of the prescription'),
@@ -776,8 +777,15 @@ export class ChatService {
             this.logger.error('Error in book_appointment tool:', error);
             return {
               success: false,
-              error: 'Failed to book appointment',
+              appointmentId: '',
               message: error instanceof Error ? error.message : 'Unknown error',
+              details: {
+                doctorName: '',
+                datetime: '',
+                type: AppointmentType.CONSULTATION,
+                mode: AppointmentMode.VIRTUAL,
+                status: AppointmentStatus.CANCELLED,
+              },
             };
           }
         },
@@ -814,35 +822,39 @@ export class ChatService {
         },
       }),
 
-      cancel_appointment: tool<
-        CancelAppointmentInput,
-        CancelAppointmentOutput
-      >({
-        description: 'Cancel a specific appointment',
-        inputSchema: cancelAppointmentInputSchema,
-        execute: async ({
-          appointmentId,
-          reason,
-        }: CancelAppointmentInput) => {
-          this.logger.log(`Cancelling appointment: ${appointmentId}`);
-          try {
-            const result = await this.cancelAppointment(
-              appointmentId,
-              userContext,
-              reason,
-            );
-            this.logger.log(`Appointment cancellation completed`);
-            return result;
-          } catch (error) {
-            this.logger.error('Error in cancel_appointment tool:', error);
-            return {
-              success: false,
-              error: 'Failed to cancel appointment',
-              message: error instanceof Error ? error.message : 'Unknown error',
-            };
-          }
+      cancel_appointment: tool<CancelAppointmentInput, CancelAppointmentOutput>(
+        {
+          description: 'Cancel a specific appointment',
+          inputSchema: cancelAppointmentInputSchema,
+          execute: async ({
+            appointmentId,
+            reason,
+          }: CancelAppointmentInput) => {
+            this.logger.log(`Cancelling appointment: ${appointmentId}`);
+            try {
+              const result = await this.cancelAppointment(
+                appointmentId,
+                userContext,
+                reason,
+              );
+              this.logger.log(`Appointment cancellation completed`);
+              return result;
+            } catch (error) {
+              this.logger.error('Error in cancel_appointment tool:', error);
+              return {
+                success: false,
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : 'Failed to cancel appointment',
+                appointmentId: appointmentId,
+                reason: reason || 'Cancellation failed',
+                cancelledBy: userContext.role || 'unknown',
+              };
+            }
+          },
         },
-      }),
+      ),
 
       get_my_prescriptions: tool<
         GetMyPrescriptionsInput,
@@ -898,8 +910,18 @@ export class ChatService {
             this.logger.error('Error in get_prescription_details tool:', error);
             return {
               success: false,
-              error: 'Failed to fetch prescription details',
-              message: error instanceof Error ? error.message : 'Unknown error',
+              id: '',
+              issueDate: new Date(),
+              expiryDate: new Date(),
+              isFulfilled: false,
+              items: [],
+              patient: { name: '', id: '' },
+              doctor: { name: '', id: '' },
+              pharmacist: null,
+              accessedBy:
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to fetch prescription details',
             };
           }
         },
