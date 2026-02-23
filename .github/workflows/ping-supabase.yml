@@ -13,16 +13,15 @@ jobs:
       - name: Echo start time
         run: echo "Starting Supabase ping at $(date -u) UTC"
 
-      - name: Ping Supabase (PostgREST)
+      - name: Ping Supabase keep-alive endpoint
         env:
-          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           set -e
-          curl -sS \
-            "${SUPABASE_PROJECT_URL}/rest/v1/ping_logs?select=id&limit=1" \
-            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
-            -H "Content-Type: application/json"
+          curl -sS "${SUPABASE_URL}/rest/v1/ping_logs?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}"
 
       - name: Done
         run: echo "Finished Supabase ping at $(date -u) UTC"
