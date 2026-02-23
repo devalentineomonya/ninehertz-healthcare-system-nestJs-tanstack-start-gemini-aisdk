@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { streamText, tool } from 'ai';
+import { streamText, tool, zodSchema } from 'ai';
 import { Cache } from 'cache-manager';
 import { Response } from 'express';
 import { AppointmentService } from 'src/appointment/appointment.service';
@@ -56,11 +57,10 @@ export class ChatService {
     private readonly prescriptionService: PrescriptionService,
     private readonly pharmacistService: PharmacistService,
   ) {
-    const apiKey = this.configService.getOrThrow<string>('GEMINI_API_KEY');
-
+    const apiKey = String(this.configService.getOrThrow('GEMINI_API_KEY'));
     this.google = createGoogleGenerativeAI({
       apiKey,
-    });
+    }) as ReturnType<typeof createGoogleGenerativeAI>;
   }
 
   async testModel() {
@@ -84,7 +84,6 @@ export class ChatService {
         ],
       };
 
-      // 2. ENABLE timeout handling
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
@@ -95,17 +94,10 @@ export class ChatService {
       const startTime = Date.now();
 
       try {
-        // 3. Add error listener to the stream
         const result = streamText({
           ...testPayload,
           abortSignal: controller.signal,
         });
-
-        // 4. Handle stream errors explicitly
-        // result.textStream.on('error', (err) => {
-        //   this.logger.error('Stream error:', err);
-        //   controller.abort();
-        // });
 
         for await (const delta of result.textStream) {
           response += delta;
@@ -121,14 +113,12 @@ export class ChatService {
         `Response: '${response}' | Chunks: ${chunkCount} | Time: ${duration}ms`,
       );
 
-      // 3. Case-insensitive validation
       if (!response.trim().toUpperCase().includes('TEST_SUCCESS')) {
         throw new Error(`Invalid response: '${response}'`);
       }
 
       return { response, chunkCount, success: true };
     } catch (error: unknown) {
-      // 4. Specific Gemini error handling
       if (error instanceof DOMException && error.name === 'AbortError') {
         this.logger.error('Gemini request timed out');
       } else if (
@@ -182,7 +172,6 @@ export class ChatService {
         `Handling request for user: ${userId}, role: ${userRole}, IP: ${ip}`,
       );
 
-      // Check if IP is blocked
       const isBlocked = await this.cacheManager.get(`blocked:${ip}`);
       if (isBlocked) {
         this.logger.warn(`Blocked IP attempted request: ${ip}`);
@@ -190,7 +179,6 @@ export class ChatService {
         return;
       }
 
-      // Rate limiting logic
       const countKey = `count:${ip}`;
       const count = (await this.cacheManager.get<number>(countKey)) ?? 0;
 
@@ -212,13 +200,11 @@ export class ChatService {
 
       this.logger.log(`Processing ${messages.length} messages`);
 
-      // Get user context with explicit role
       const userContext = await this.getUserContext(userId, userRole);
       this.logger.log(
         `User context determined: ${JSON.stringify(userContext)}`,
       );
 
-      // Set headers for streaming
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
@@ -234,7 +220,7 @@ export class ChatService {
       this.handleResponseError(res, error);
     }
   }
-  // 3. Update getUserContext to accept role parameter
+
   private async getUserContext(
     userId: string,
     role: UserRole,
@@ -244,7 +230,6 @@ export class ChatService {
     try {
       this.logger.log(`Setting user context for: ${userId}, role: ${role}`);
 
-      // Based on role, get the specific ID
       switch (role) {
         case UserRole.PATIENT: {
           const patient = await this.patientService.findByUserId(userId);
@@ -257,7 +242,6 @@ export class ChatService {
           }
           break;
         }
-
         case UserRole.DOCTOR: {
           const doctor = await this.doctorService.findByUserId?.(userId);
           if (doctor) {
@@ -269,7 +253,6 @@ export class ChatService {
           }
           break;
         }
-
         case UserRole.PHARMACIST: {
           const pharmacist =
             await this.pharmacistService.findByUserId?.(userId);
@@ -282,12 +265,10 @@ export class ChatService {
           }
           break;
         }
-
         case UserRole.ADMIN: {
           this.logger.log('Admin role set - no additional ID needed');
           break;
         }
-
         default: {
           this.logger.warn(
             `Unknown role: ${role as string}, defaulting to patient`,
@@ -300,7 +281,7 @@ export class ChatService {
       return context;
     } catch (error) {
       this.logger.error('Error setting user context:', error);
-      throw error; // Re-throw instead of defaulting
+      throw error;
     }
   }
 
@@ -317,9 +298,7 @@ export class ChatService {
   private handleResponseError(res: Response, error: unknown): void {
     const errorMessage =
       error instanceof Error ? error.message : 'Response generation failed';
-
     this.logger.error('Handling response error:', errorMessage);
-
     if (!res.headersSent) {
       res.status(500).json({ error: errorMessage });
     }
@@ -327,7 +306,6 @@ export class ChatService {
 
   private normalizeSpecialty(specialty: string): string {
     if (!specialty || typeof specialty !== 'string') return specialty;
-
     const specialties: Record<string, string> = {
       cardio: 'Cardiology',
       heart: 'Cardiology',
@@ -342,13 +320,11 @@ export class ChatService {
       psychiatry: 'Psychiatry',
       oncology: 'Oncology',
     };
-
     return specialties[specialty.toLowerCase()] || specialty;
   }
 
   private normalizeDayOfWeek(day: string): string {
     if (!day || typeof day !== 'string') return day;
-
     const days: Record<string, string> = {
       mon: 'Monday',
       tue: 'Tuesday',
@@ -365,7 +341,6 @@ export class ChatService {
       saturday: 'Saturday',
       sunday: 'Sunday',
     };
-
     return days[day.toLowerCase()] || day;
   }
 
@@ -418,8 +393,6 @@ export class ChatService {
         'Calling Google Gemini API with messages:',
         aiMessages.length,
       );
-
-      // Add debugging for the actual request
       this.logger.log(
         'AI Messages structure:',
         JSON.stringify(aiMessages, null, 2),
@@ -440,7 +413,6 @@ export class ChatService {
       let totalContent = '';
 
       try {
-        // Handle the response promise separately for debugging
         Promise.resolve(result.response)
           .then((response) => {
             this.logger.log(
@@ -451,25 +423,20 @@ export class ChatService {
             this.logger.error(`AI Response promise error:`, error);
           });
 
-        // Improved stream handling with timeout
         const streamPromise = (async () => {
           for await (const delta of result.textStream) {
             if (res.destroyed || res.writableEnded) {
               this.logger.warn('Response stream ended prematurely');
               break;
             }
-
             if (!hasStarted) {
               this.logger.log('First chunk received, streaming started');
               hasStarted = true;
             }
-
             chunkCount++;
             totalContent += delta;
             res.write(delta);
-
             if (chunkCount % 5 === 0) {
-              // More frequent logging
               this.logger.log(
                 `Streamed ${chunkCount} chunks, latest chunk: "${delta.substring(0, 50)}..."`,
               );
@@ -477,10 +444,9 @@ export class ChatService {
           }
         })();
 
-        // Race between stream and timeout
         await Promise.race([
           streamPromise,
-          new Promise((_, reject) =>
+          new Promise<never>((_, reject) =>
             setTimeout(
               () => reject(new Error('Stream iteration timeout')),
               30000,
@@ -489,15 +455,12 @@ export class ChatService {
         ]);
       } catch (streamError) {
         this.logger.error('Error in text stream iteration:', streamError);
-
-        // Try alternative approach - get full text
         try {
           this.logger.log('Attempting to get full text as fallback...');
           const fullText = await result.text;
           this.logger.log(
             `Fallback text received: ${fullText.length} characters`,
           );
-
           if (fullText && fullText.length > 0) {
             if (!res.destroyed && !res.writableEnded) {
               res.write(fullText);
@@ -514,7 +477,6 @@ export class ChatService {
       }
 
       clearTimeout(streamTimeout);
-
       this.logger.log(
         `Final stats - Chunks: ${chunkCount}, Content length: ${totalContent.length}`,
       );
@@ -523,18 +485,14 @@ export class ChatService {
         this.logger.warn(
           'No chunks received - attempting direct API call for debugging...',
         );
-
-        // Try a simple test call to diagnose the issue
         try {
           const testResult = streamText({
             model: this.google(this.model),
             messages: [{ role: 'user', content: 'Say hello' }],
             maxOutputTokens: 50,
           });
-
           const testText = await testResult.text;
           this.logger.log(`Test call successful: ${testText}`);
-
           if (!res.destroyed && !res.writableEnded) {
             res.write(
               'I apologize, but I encountered a streaming issue. However, I can confirm the connection is working. Please try your request again.',
@@ -559,7 +517,6 @@ export class ChatService {
     } catch (error) {
       clearTimeout(streamTimeout);
       this.logger.error('Error in generateMedicalResponse:', error);
-
       if (!res.destroyed && !res.writableEnded) {
         if (!res.headersSent) {
           res.status(500).json({
@@ -571,7 +528,6 @@ export class ChatService {
           res.end();
         }
       }
-
       throw error;
     }
   }
@@ -579,17 +535,124 @@ export class ChatService {
   private getTools(userContext: UserContext) {
     this.logger.log('Setting up tools for user context');
 
+    const listDoctorsInputSchema = z.object({
+      specialty: z
+        .string()
+        .optional()
+        .describe('Medical specialty to filter by (e.g., Cardiology)'),
+    });
+    type ListDoctorsInput = z.infer<typeof listDoctorsInputSchema>;
+
+    const checkDoctorAvailabilityInputSchema = z.object({
+      doctorName: z.string().describe('Name of the doctor'),
+      dayOfWeek: z
+        .string()
+        .describe(
+          'Day of the week (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)',
+        ),
+    });
+    type CheckDoctorAvailabilityInput = z.infer<
+      typeof checkDoctorAvailabilityInputSchema
+    >;
+
+    const listAvailableDoctorsByDayInputSchema = z.object({
+      dayOfWeek: z
+        .string()
+        .describe(
+          'Day of the week (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)',
+        ),
+      specialty: z
+        .string()
+        .optional()
+        .describe('Medical specialty to filter by (e.g., Cardiology)'),
+    });
+    type ListAvailableDoctorsByDayInput = z.infer<
+      typeof listAvailableDoctorsByDayInputSchema
+    >;
+
+    const bookAppointmentInputSchema = z.object({
+      doctorId: z.string().describe('ID of the doctor'),
+      userId: z.string().describe('ID of the user booking the appointment'),
+      startTime: z
+        .string()
+        .describe('Start time in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)'),
+      endTime: z
+        .string()
+        .describe('End time in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)'),
+      type: z
+        .string()
+        .optional()
+        .describe('Appointment type (CONSULTATION, FOLLOW_UP, EMERGENCY)'),
+      mode: z
+        .string()
+        .optional()
+        .describe('Appointment mode (VIRTUAL, IN_PERSON)'),
+    });
+    type BookAppointmentInput = z.infer<typeof bookAppointmentInputSchema>;
+
+    const getMyAppointmentsInputSchema = z.object({
+      userId: z.string().describe('ID of the user'),
+      status: z
+        .string()
+        .optional()
+        .describe(
+          'Filter by appointment status (SCHEDULED, COMPLETED, CANCELLED)',
+        ),
+    });
+    type GetMyAppointmentsInput = z.infer<typeof getMyAppointmentsInputSchema>;
+
+    const cancelAppointmentInputSchema = z.object({
+      appointmentId: z.string().describe('ID of the appointment to cancel'),
+      reason: z.string().optional().describe('Reason for cancellation'),
+    });
+    type CancelAppointmentInput = z.infer<typeof cancelAppointmentInputSchema>;
+
+    const getMyPrescriptionsInputSchema = z.object({
+      userId: z.string().describe('ID of the user'),
+      role: z.string().describe('User role (patient, doctor, pharmacist)'),
+    });
+    type GetMyPrescriptionsInput = z.infer<
+      typeof getMyPrescriptionsInputSchema
+    >;
+
+    const getPrescriptionDetailsInputSchema = z.object({
+      prescriptionId: z.string().describe('ID of the prescription'),
+      userId: z.string().describe('ID of the user'),
+      role: z.string().describe('User role (patient, doctor, pharmacist)'),
+    });
+    type GetPrescriptionDetailsInput = z.infer<
+      typeof getPrescriptionDetailsInputSchema
+    >;
+
+    type ListDoctorsOutput = Awaited<ReturnType<ChatService['listDoctors']>>;
+    type CheckDoctorAvailabilityOutput = Awaited<
+      ReturnType<ChatService['handleDoctorAvailabilityByDay']>
+    >;
+    type ListAvailableDoctorsByDayOutput = Awaited<
+      ReturnType<ChatService['listAvailableDoctorsByDay']>
+    >;
+    type BookAppointmentOutput = Awaited<
+      ReturnType<ChatService['bookAppointment']>
+    >;
+    type GetMyAppointmentsOutput = Awaited<
+      ReturnType<ChatService['getMyAppointments']>
+    >;
+    type CancelAppointmentOutput = Awaited<
+      ReturnType<ChatService['cancelAppointment']>
+    >;
+    type GetMyPrescriptionsOutput = Awaited<
+      ReturnType<ChatService['getMyPrescriptions']>
+    >;
+    type GetPrescriptionDetailsOutput = Awaited<
+      ReturnType<ChatService['getPrescriptionDetails']>
+    >;
+
     return {
-      list_doctors: tool({
+      list_doctors: tool<ListDoctorsInput, ListDoctorsOutput>({
         description:
           'List all available doctors, optionally filtered by specialty',
-        parameters: z.object({
-          specialty: z
-            .string()
-            .optional()
-            .describe('Medical specialty to filter by (e.g., Cardiology)'),
-        }),
-        execute: async ({ specialty }) => {
+        inputSchema: zodSchema(listDoctorsInputSchema),
+        execute: async ({ specialty }: ListDoctorsInput) => {
           this.logger.log(
             `Executing list_doctors tool with specialty: ${specialty}`,
           );
@@ -612,18 +675,17 @@ export class ChatService {
         },
       }),
 
-      check_doctor_availability: tool({
+      check_doctor_availability: tool<
+        CheckDoctorAvailabilityInput,
+        CheckDoctorAvailabilityOutput
+      >({
         description:
           'Check available time slots for a specific doctor on a given day of the week',
-        parameters: z.object({
-          doctorName: z.string().describe('Name of the doctor'),
-          dayOfWeek: z
-            .string()
-            .describe(
-              'Day of the week (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)',
-            ),
-        }),
-        execute: async ({ doctorName, dayOfWeek }) => {
+        inputSchema: zodSchema(checkDoctorAvailabilityInputSchema),
+        execute: async ({
+          doctorName,
+          dayOfWeek,
+        }: CheckDoctorAvailabilityInput) => {
           this.logger.log(
             `Checking availability for ${doctorName} on ${dayOfWeek}`,
           );
@@ -639,26 +701,26 @@ export class ChatService {
               'Error in check_doctor_availability tool:',
               error,
             );
-            throw error;
+            return {
+              success: false,
+              error: 'Failed to check doctor availability',
+              message: error instanceof Error ? error.message : 'Unknown error',
+            };
           }
         },
       }),
 
-      list_available_doctors_by_day: tool({
+      list_available_doctors_by_day: tool<
+        ListAvailableDoctorsByDayInput,
+        ListAvailableDoctorsByDayOutput
+      >({
         description:
           'List doctors with availability on a specific day of the week, optionally filtered by specialty',
-        parameters: z.object({
-          dayOfWeek: z
-            .string()
-            .describe(
-              'Day of the week (Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday)',
-            ),
-          specialty: z
-            .string()
-            .optional()
-            .describe('Medical specialty to filter by (e.g., Cardiology)'),
-        }),
-        execute: async ({ dayOfWeek, specialty }) => {
+        inputSchema: zodSchema(listAvailableDoctorsByDayInputSchema),
+        execute: async ({
+          dayOfWeek,
+          specialty,
+        }: ListAvailableDoctorsByDayInput) => {
           this.logger.log(
             `Listing available doctors for ${dayOfWeek}, specialty: ${specialty}`,
           );
@@ -676,32 +738,27 @@ export class ChatService {
               'Error in list_available_doctors_by_day tool:',
               error,
             );
-            throw error;
+            return {
+              success: false,
+              error: 'Failed to fetch available doctors',
+              message: error instanceof Error ? error.message : 'Unknown error',
+              total: 0,
+              doctors: [],
+            };
           }
         },
       }),
 
-      book_appointment: tool({
+      book_appointment: tool<BookAppointmentInput, BookAppointmentOutput>({
         description: 'Book an appointment with a doctor at a specific time',
-        parameters: z.object({
-          doctorId: z.string().describe('ID of the doctor'),
-          userId: z.string().describe('ID of the user booking the appointment'),
-          startTime: z
-            .string()
-            .describe('Start time in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)'),
-          endTime: z
-            .string()
-            .describe('End time in ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)'),
-          type: z
-            .string()
-            .optional()
-            .describe('Appointment type (CONSULTATION, FOLLOW_UP, EMERGENCY)'),
-          mode: z
-            .string()
-            .optional()
-            .describe('Appointment mode (VIRTUAL, IN_PERSON)'),
-        }),
-        execute: async ({ doctorId, startTime, endTime, type, mode }) => {
+        inputSchema: zodSchema(bookAppointmentInputSchema),
+        execute: async ({
+          doctorId,
+          startTime,
+          endTime,
+          type,
+          mode,
+        }: BookAppointmentInput) => {
           this.logger.log(`Booking appointment with doctor ${doctorId}`);
           try {
             const result = await this.bookAppointment(
@@ -718,23 +775,22 @@ export class ChatService {
             return result;
           } catch (error) {
             this.logger.error('Error in book_appointment tool:', error);
-            throw error;
+            return {
+              success: false,
+              error: 'Failed to book appointment',
+              message: error instanceof Error ? error.message : 'Unknown error',
+            };
           }
         },
       }),
 
-      get_my_appointments: tool({
+      get_my_appointments: tool<
+        GetMyAppointmentsInput,
+        GetMyAppointmentsOutput
+      >({
         description: 'Get all appointments for the current user',
-        parameters: z.object({
-          userId: z.string().describe('ID of the user'),
-          status: z
-            .string()
-            .optional()
-            .describe(
-              'Filter by appointment status (SCHEDULED, COMPLETED, CANCELLED)',
-            ),
-        }),
-        execute: async ({ status }) => {
+        inputSchema: zodSchema(getMyAppointmentsInputSchema),
+        execute: async ({ status }: GetMyAppointmentsInput) => {
           this.logger.log(`Getting appointments for user, status: ${status}`);
           try {
             const result = await this.getMyAppointments(
@@ -747,41 +803,55 @@ export class ChatService {
             return result;
           } catch (error) {
             this.logger.error('Error in get_my_appointments tool:', error);
-            throw error;
+            return {
+              success: false,
+              error: 'Failed to fetch appointments',
+              message: error instanceof Error ? error.message : 'Unknown error',
+              total: 0,
+              appointments: [],
+              role: userContext.role,
+            };
           }
         },
       }),
 
-      cancel_appointment: tool({
-        description: 'Cancel a specific appointment',
-        parameters: z.object({
-          appointmentId: z.string().describe('ID of the appointment to cancel'),
-          reason: z.string().optional().describe('Reason for cancellation'),
-        }),
-        execute: async ({ appointmentId, reason }) => {
-          this.logger.log(`Cancelling appointment: ${appointmentId}`);
-          try {
-            const result = await this.cancelAppointment(
-              appointmentId,
-              userContext,
-              reason,
-            );
-            this.logger.log(`Appointment cancellation completed`);
-            return result;
-          } catch (error) {
-            this.logger.error('Error in cancel_appointment tool:', error);
-            throw error;
-          }
+      cancel_appointment: tool<CancelAppointmentInput, CancelAppointmentOutput>(
+        {
+          description: 'Cancel a specific appointment',
+          inputSchema: zodSchema(cancelAppointmentInputSchema),
+          execute: async ({
+            appointmentId,
+            reason,
+          }: CancelAppointmentInput) => {
+            this.logger.log(`Cancelling appointment: ${appointmentId}`);
+            try {
+              const result = await this.cancelAppointment(
+                appointmentId,
+                userContext,
+                reason,
+              );
+              this.logger.log(`Appointment cancellation completed`);
+              return result;
+            } catch (error) {
+              this.logger.error('Error in cancel_appointment tool:', error);
+              return {
+                success: false,
+                error: 'Failed to cancel appointment',
+                message:
+                  error instanceof Error ? error.message : 'Unknown error',
+              };
+            }
+          },
         },
-      }),
+      ),
 
-      get_my_prescriptions: tool({
+      get_my_prescriptions: tool<
+        GetMyPrescriptionsInput,
+        GetMyPrescriptionsOutput
+      >({
         description: 'Get all prescriptions for the current user',
-        parameters: z.object({
-          userId: z.string().describe('ID of the user'),
-          role: z.string().describe('User role (patient, doctor, pharmacist)'),
-        }),
-        execute: async ({ role }) => {
+        inputSchema: zodSchema(getMyPrescriptionsInputSchema),
+        execute: async ({ role }: GetMyPrescriptionsInput) => {
           this.logger.log(`Getting prescriptions for user, role: ${role}`);
           try {
             const result = await this.getMyPrescriptions(
@@ -794,19 +864,28 @@ export class ChatService {
             return result;
           } catch (error) {
             this.logger.error('Error in get_my_prescriptions tool:', error);
-            throw error;
+            return {
+              success: false,
+              error: 'Failed to fetch prescriptions',
+              message: error instanceof Error ? error.message : 'Unknown error',
+              total: 0,
+              prescriptions: [],
+              role: userContext.role,
+            };
           }
         },
       }),
 
-      get_prescription_details: tool({
+      get_prescription_details: tool<
+        GetPrescriptionDetailsInput,
+        GetPrescriptionDetailsOutput
+      >({
         description: 'Get detailed information about a specific prescription',
-        parameters: z.object({
-          prescriptionId: z.string().describe('ID of the prescription'),
-          userId: z.string().describe('ID of the user'),
-          role: z.string().describe('User role (patient, doctor, pharmacist)'),
-        }),
-        execute: async ({ prescriptionId, role }) => {
+        inputSchema: zodSchema(getPrescriptionDetailsInputSchema),
+        execute: async ({
+          prescriptionId,
+          role,
+        }: GetPrescriptionDetailsInput) => {
           this.logger.log(`Getting prescription details: ${prescriptionId}`);
           try {
             const result = await this.getPrescriptionDetails(
@@ -818,14 +897,17 @@ export class ChatService {
             return result;
           } catch (error) {
             this.logger.error('Error in get_prescription_details tool:', error);
-            throw error;
+            return {
+              success: false,
+              error: 'Failed to fetch prescription details',
+              message: error instanceof Error ? error.message : 'Unknown error',
+            };
           }
         },
       }),
     };
   }
 
-  // ... rest of the methods remain the same as in your original code
   private getSystemMessage(userContext: UserContext) {
     const currentDate = new Date().toISOString().split('T')[0];
     const currentDay = new Date().toLocaleDateString('en-US', {
@@ -1074,6 +1156,7 @@ You are here to make healthcare management simple and stress-free for users whil
       throw new Error('Failed to retrieve available doctors');
     }
   }
+
   private async handleDoctorAvailabilityByDay(
     doctorName: string,
     dayOfWeek: string,
@@ -1117,8 +1200,8 @@ You are here to make healthcare management simple and stress-free for users whil
         };
       }
 
-      const doctors = doctorsResponse.data;
-      const doctor = doctors[0];
+      const doctor = doctorsResponse.data[0];
+
       const availability = await this.doctorService.getDoctorAvailability(
         doctor.id,
         { dayOfWeek: normalizedDay as DaysOfWeek },
@@ -1175,7 +1258,6 @@ You are here to make healthcare management simple and stress-free for users whil
       status: AppointmentStatus;
     };
   }> {
-    // Role-based permission check
     if (userContext.role !== UserRole.PATIENT) {
       throw new Error(
         `Only patients can book appointments. Your current role is '${userContext.role}'.`,
@@ -1211,7 +1293,6 @@ You are here to make healthcare management simple and stress-free for users whil
         throw new Error('Start time must be before end time');
       }
 
-      // Check if doctor exists
       const doctor = await this.doctorService.findOne(doctorId);
       if (!doctor) {
         throw new Error('Doctor not found');
@@ -1242,7 +1323,7 @@ You are here to make healthcare management simple and stress-free for users whil
       };
     } catch (error) {
       this.logger.error('Error booking appointment:', error);
-      throw error; // Re-throw to be handled by interpretError
+      throw error;
     }
   }
 
@@ -1272,6 +1353,7 @@ You are here to make healthcare management simple and stress-free for users whil
       }
 
       const pagination: PaginationDto = { page: 1, limit: 50 };
+
       let appointments: {
         data: Array<{
           id: string;
@@ -1342,6 +1424,7 @@ You are here to make healthcare management simple and stress-free for users whil
       throw error;
     }
   }
+
   private async cancelAppointment(
     appointmentId: string,
     userContext: UserContext,
@@ -1358,14 +1441,12 @@ You are here to make healthcare management simple and stress-free for users whil
     }
 
     try {
-      // Check if user has permission to cancel this appointment
       if (userContext.role === UserRole.PATIENT) {
         const appointment =
           await this.appointmentService.findOne(appointmentId);
         if (!appointment) {
           throw new Error('Appointment not found');
         }
-
         if (appointment.patient?.user.id !== userContext.userId) {
           throw new Error('You can only cancel your own appointments');
         }
@@ -1375,7 +1456,6 @@ You are here to make healthcare management simple and stress-free for users whil
         if (!appointment) {
           throw new Error('Appointment not found');
         }
-
         if (appointment.doctor?.user.id !== userContext.userId) {
           throw new Error('You can only cancel appointments assigned to you');
         }
@@ -1481,18 +1561,9 @@ You are here to make healthcare management simple and stress-free for users whil
     expiryDate: Date;
     isFulfilled: boolean;
     items: any[];
-    patient: {
-      name: string;
-      id: string;
-    };
-    doctor: {
-      name: string;
-      id: string;
-    };
-    pharmacist: {
-      name: string;
-      id: string;
-    } | null;
+    patient: { name: string; id: string };
+    doctor: { name: string; id: string };
+    pharmacist: { name: string; id: string } | null;
     accessedBy: string;
   }> {
     if (!prescriptionId) {

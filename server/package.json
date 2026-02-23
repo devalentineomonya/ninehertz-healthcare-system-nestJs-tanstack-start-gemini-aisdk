@@ -61,7 +61,7 @@
     "twilio": "^5.8.0",
     "typeorm": "^0.3.25",
     "web-push": "^3.6.7",
-    "zod": "^4.0.13"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
