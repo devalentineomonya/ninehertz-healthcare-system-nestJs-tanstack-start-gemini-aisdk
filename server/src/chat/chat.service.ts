@@ -3,7 +3,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { streamText, tool, zodSchema } from 'ai';
+import { streamText, tool } from 'ai';
 import { Cache } from 'cache-manager';
 import { Response } from 'express';
 import { AppointmentService } from 'src/appointment/appointment.service';
@@ -19,7 +19,7 @@ import { PatientService } from 'src/patient/patient.service';
 import { PharmacistService } from 'src/pharmacist/pharmacist.service';
 import { PrescriptionService } from 'src/prescription/prescription.service';
 import { UserRole } from 'src/user/entities/user.entity';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { CreateChatDto, MessageDto } from './dto/create-chat.dto';
 
 interface PaginationDto {
@@ -33,6 +33,7 @@ interface UserContext {
   patientId?: string;
   doctorId?: string;
 }
+
 
 @Injectable()
 export class ChatService {
@@ -611,9 +612,7 @@ export class ChatService {
       userId: z.string().describe('ID of the user'),
       role: z.string().describe('User role (patient, doctor, pharmacist)'),
     });
-    type GetMyPrescriptionsInput = z.infer<
-      typeof getMyPrescriptionsInputSchema
-    >;
+    type GetMyPrescriptionsInput = z.infer<typeof getMyPrescriptionsInputSchema>;
 
     const getPrescriptionDetailsInputSchema = z.object({
       prescriptionId: z.string().describe('ID of the prescription'),
@@ -651,7 +650,7 @@ export class ChatService {
       list_doctors: tool<ListDoctorsInput, ListDoctorsOutput>({
         description:
           'List all available doctors, optionally filtered by specialty',
-        inputSchema: zodSchema(listDoctorsInputSchema),
+        inputSchema: listDoctorsInputSchema,
         execute: async ({ specialty }: ListDoctorsInput) => {
           this.logger.log(
             `Executing list_doctors tool with specialty: ${specialty}`,
@@ -681,7 +680,7 @@ export class ChatService {
       >({
         description:
           'Check available time slots for a specific doctor on a given day of the week',
-        inputSchema: zodSchema(checkDoctorAvailabilityInputSchema),
+        inputSchema: checkDoctorAvailabilityInputSchema,
         execute: async ({
           doctorName,
           dayOfWeek,
@@ -716,7 +715,7 @@ export class ChatService {
       >({
         description:
           'List doctors with availability on a specific day of the week, optionally filtered by specialty',
-        inputSchema: zodSchema(listAvailableDoctorsByDayInputSchema),
+        inputSchema: listAvailableDoctorsByDayInputSchema,
         execute: async ({
           dayOfWeek,
           specialty,
@@ -751,7 +750,7 @@ export class ChatService {
 
       book_appointment: tool<BookAppointmentInput, BookAppointmentOutput>({
         description: 'Book an appointment with a doctor at a specific time',
-        inputSchema: zodSchema(bookAppointmentInputSchema),
+        inputSchema: bookAppointmentInputSchema,
         execute: async ({
           doctorId,
           startTime,
@@ -789,7 +788,7 @@ export class ChatService {
         GetMyAppointmentsOutput
       >({
         description: 'Get all appointments for the current user',
-        inputSchema: zodSchema(getMyAppointmentsInputSchema),
+        inputSchema: getMyAppointmentsInputSchema,
         execute: async ({ status }: GetMyAppointmentsInput) => {
           this.logger.log(`Getting appointments for user, status: ${status}`);
           try {
@@ -815,42 +814,42 @@ export class ChatService {
         },
       }),
 
-      cancel_appointment: tool<CancelAppointmentInput, CancelAppointmentOutput>(
-        {
-          description: 'Cancel a specific appointment',
-          inputSchema: zodSchema(cancelAppointmentInputSchema),
-          execute: async ({
-            appointmentId,
-            reason,
-          }: CancelAppointmentInput) => {
-            this.logger.log(`Cancelling appointment: ${appointmentId}`);
-            try {
-              const result = await this.cancelAppointment(
-                appointmentId,
-                userContext,
-                reason,
-              );
-              this.logger.log(`Appointment cancellation completed`);
-              return result;
-            } catch (error) {
-              this.logger.error('Error in cancel_appointment tool:', error);
-              return {
-                success: false,
-                error: 'Failed to cancel appointment',
-                message:
-                  error instanceof Error ? error.message : 'Unknown error',
-              };
-            }
-          },
+      cancel_appointment: tool<
+        CancelAppointmentInput,
+        CancelAppointmentOutput
+      >({
+        description: 'Cancel a specific appointment',
+        inputSchema: cancelAppointmentInputSchema,
+        execute: async ({
+          appointmentId,
+          reason,
+        }: CancelAppointmentInput) => {
+          this.logger.log(`Cancelling appointment: ${appointmentId}`);
+          try {
+            const result = await this.cancelAppointment(
+              appointmentId,
+              userContext,
+              reason,
+            );
+            this.logger.log(`Appointment cancellation completed`);
+            return result;
+          } catch (error) {
+            this.logger.error('Error in cancel_appointment tool:', error);
+            return {
+              success: false,
+              error: 'Failed to cancel appointment',
+              message: error instanceof Error ? error.message : 'Unknown error',
+            };
+          }
         },
-      ),
+      }),
 
       get_my_prescriptions: tool<
         GetMyPrescriptionsInput,
         GetMyPrescriptionsOutput
       >({
         description: 'Get all prescriptions for the current user',
-        inputSchema: zodSchema(getMyPrescriptionsInputSchema),
+        inputSchema: getMyPrescriptionsInputSchema,
         execute: async ({ role }: GetMyPrescriptionsInput) => {
           this.logger.log(`Getting prescriptions for user, role: ${role}`);
           try {
@@ -881,7 +880,7 @@ export class ChatService {
         GetPrescriptionDetailsOutput
       >({
         description: 'Get detailed information about a specific prescription',
-        inputSchema: zodSchema(getPrescriptionDetailsInputSchema),
+        inputSchema: getPrescriptionDetailsInputSchema,
         execute: async ({
           prescriptionId,
           role,
